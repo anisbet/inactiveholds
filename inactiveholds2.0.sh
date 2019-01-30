@@ -138,18 +138,21 @@ ensure_tables()
         ## Inactive holds table
         if echo "SELECT COUNT(*) FROM $INACTIVE_HOLDS_TABLE_NAME;" | sqlite3 $DBASE 2>/dev/null >/dev/null; then
             echo "confirmed $INACTIVE_HOLDS_TABLE_NAME exists..." >&2
+            echo 1
         else
-            create_inactive_holds_table
+            create_database
+            echo 0
         fi # End of creating user table.
     else
-        create_inactive_holds_table
+        create_database
+        echo 0
     fi
 }
 
 # Creates the one table for inactive holds data.
 # param:  none
 # return: none
-create_inactive_holds_table()
+create_database()
 {
     ######### schema ###########
     # CREATE TABLE $INACTIVE_HOLDS_TABLE_NAME (
@@ -166,7 +169,17 @@ create_inactive_holds_table()
     # );
     ######### schema ###########
     # None of the data in the table individually, or collectively can be considered a primary key candidate.
-    sqlite3 $DBASE <<END_SQL
+    if [ -s "$DBASE" ]; then
+        echo "*warn: $DBASE exists!" >&2
+        ANSWER=$(confirm "create $DBASE ")
+        if [ "$ANSWER" == "0" ]; then
+            echo "creating new $DBASE" >&2
+            rm $DBASE
+        else
+            echo "Keeping database $DBASE. Exiting." >&2
+        fi
+    else
+        sqlite3 $DBASE <<END_SQL
 CREATE TABLE $INACTIVE_HOLDS_TABLE_NAME (
     PickupLibrary CHAR(6) NOT NULL,
     InactiveReason CHAR(20) NOT NULL,
@@ -180,6 +193,8 @@ CREATE TABLE $INACTIVE_HOLDS_TABLE_NAME (
     ItemType CHAR(20)
 );
 END_SQL
+        echo 0
+    fi
 }
 
 # Creates the item table indices.
@@ -187,7 +202,8 @@ END_SQL
 ensure_indices()
 {
     # creates indices that will be popular during queries.
-    sqlite3 $DBASE <<END_SQL
+    if [ -s "$DBASE" ]; then
+        sqlite3 $DBASE <<END_SQL
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_pickup ON $INACTIVE_HOLDS_TABLE_NAME (PickupLibrary);
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_reason ON $INACTIVE_HOLDS_TABLE_NAME (InactiveReason);
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_itype ON $INACTIVE_HOLDS_TABLE_NAME (ItemType);
@@ -196,6 +212,11 @@ CREATE INDEX IF NOT EXISTS idx_inactive_holds_date_inactive ON $INACTIVE_HOLDS_T
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_date_available ON $INACTIVE_HOLDS_TABLE_NAME (DateAvailable);
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_branch_date_inactive ON $INACTIVE_HOLDS_TABLE_NAME (PickupLibrary, DateInactive);
 END_SQL
+        echo 0
+    else
+        echo "**error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >&2
+        echo 1
+    fi
 }
 
 # DROP INDEX IF EXISTS from inactive holds table. This makes loading faster.
@@ -204,7 +225,8 @@ END_SQL
 drop_indices()
 {
     # creates indices that will be popular during queries.
-    sqlite3 $DBASE <<END_SQL
+    if [ -s "$DBASE" ]; then
+        sqlite3 $DBASE <<END_SQL
 DROP INDEX IF EXISTS idx_inactive_holds_pickup;
 DROP INDEX IF EXISTS idx_inactive_holds_reason;
 DROP INDEX IF EXISTS idx_inactive_holds_itype;
@@ -213,6 +235,11 @@ DROP INDEX IF EXISTS idx_inactive_holds_date_inactive;
 DROP INDEX IF EXISTS idx_inactive_holds_date_available;
 DROP INDEX IF EXISTS idx_inactive_holds_branch_date_inactive;
 END_SQL
+        echo 0
+    else
+        echo "**error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >&2
+        echo 1
+    fi
 }
 
 # Loads any '$HOLD_ACTIVITY' files in $WORKING_DIR/Data.
@@ -220,14 +247,20 @@ END_SQL
 # return: none
 load_inactive_holds()
 {
-    for log_list in $(ls $WORKING_DIR/Data); do
-        cat $log_list | /home/its/bin/pipe.pl -m"c0:INSERT INTO inactive\_holds (PickupLibrary\,InactiveReason\,DateInactive\,DateHoldPlaced\,HoldType\,Override\,NumberOfPickupNotices\,DateNotified\,DateAvailable\,ItemType) VALUES (\"######\",c1:\"####################\",c2:#,c3:#,c4:\"##\",c5:\"##\",c6:#,c7:#,c8:#,c9:\"####################\");" -h, >$log_list.sql
-        if [ -f "$log_list.sql" ]; then
-            cat $log_list.sql | sqlite3 $DBASE
-        else
-            echo "* warn: no records to load. $log_list.sql contains no statements." >&2
-        fi
-    done
+    if [ -s "$DBASE" ]; then
+        for log_list in $(ls $WORKING_DIR/Data); do
+            cat $log_list | /home/its/bin/pipe.pl -m"c0:INSERT INTO inactive\_holds (PickupLibrary\,InactiveReason\,DateInactive\,DateHoldPlaced\,HoldType\,Override\,NumberOfPickupNotices\,DateNotified\,DateAvailable\,ItemType) VALUES (\"######\",c1:\"####################\",c2:#,c3:#,c4:\"##\",c5:\"##\",c6:#,c7:#,c8:#,c9:\"####################\");" -h, >$log_list.sql
+            if [ -f "$log_list.sql" ]; then
+                cat $log_list.sql | sqlite3 $DBASE
+            else
+                echo "* warn: no records to load. $log_list.sql contains no statements." >&2
+            fi
+        done
+        echo 0
+    else
+        echo "**error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >&2
+        echo 1
+    fi
 }
 
 # Backs up data in the $WORKING_DIR/Data directory, then removes the '$HOLD_ACTIVITY' files
@@ -280,13 +313,16 @@ fetch_files()
 }
 
 # Argument processing.
-while getopts ":cCfilLx" opt; do
+while getopts ":cCdfilLx" opt; do
   case $opt in
 	c)	echo "-c triggered to clean up the files on the ILS ($SERVER)." >&2
         cleanup
 		;;
     C)	echo "-C triggered to create new database (if necessary)." >&2
-        ensure_tables
+        create_database
+		;;
+    d)	echo "-d triggered to drop indices from $DBASE." >&2
+        drop_indices
 		;;
     f)	echo "-f triggered to fetch files from the ILS ($SERVER)." >&2
         fetch_files
