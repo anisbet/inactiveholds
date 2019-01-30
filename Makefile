@@ -27,12 +27,13 @@
 #
 #      0.0 - Dev.
 #########################################################################
-LOCAL=~/projects/inactiveholds2.0/
+SERVER=its\@epl-el1.epl.ca
+REMOTE=/home/its/InactiveHolds
+LOCAL=~/projects/inactiveholds2.0
 APP=inactiveholds2.0.sh
 .PHONY: test run
 
-test: 
-	echo "test script"
-run: test 
-	echo "run script"
+install: 
+	scp ${LOCAL}/${APP} ${SERVER}:${REMOTE}
+
 

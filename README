@@ -3,6 +3,8 @@
 
 Project Notes
 -------------
+Creates updates and manages inactive holds database on its@epl-el1.epl.ca. This moves the project 
+off of ILSDEV1, and uses more modern scripting techniques to back up and store inactive holds data.
 
 Instructions for Running:
 ./inactiveholds2.0.sh
