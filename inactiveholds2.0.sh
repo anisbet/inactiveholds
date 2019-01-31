@@ -105,7 +105,6 @@ confirm()
 			echo 1
 			;;
 	esac
-	echo 1
 }
 
 # Drops all the standard tables.
