@@ -261,13 +261,13 @@ cleanup()
                 echo `date +"%Y-%m-%d %H:%M:%S"`" *warning: failed to clean up '$HOLD_ACTIVITY' files from $SERVER $INACTIVE_HOLDS_DIR. Do it manually to avoid duplicate inserts of data." >>$LOG
                 echo "*warn: failed to clean up '$HOLD_ACTIVITY' files from ILS." >&2
                 echo "*warn: Do it manually to avoid duplicate inserts of data." >&2
-                echo `date +"%Y-%m-%d %H:%M:%S"`" *warning: failed to clean up '$HOLD_ACTIVITY' files from $SERVER $INACTIVE_HOLDS_DIR. Do it manually to avoid duplicate inserts of data." | mailx -s"*warning removing inactive holds lists, chance of reloading next time!" "$EMAILS"
+                echo `date +"%Y-%m-%d %H:%M:%S"`" *warning: failed to clean up '$HOLD_ACTIVITY' files from $SERVER $INACTIVE_HOLDS_DIR. Do it manually to avoid duplicate inserts of data." | mailx -s"*warning removing inactive holds lists, chance of reloading next time!" -a"From:its@epl-el1.epl.ca"  "$EMAILS"
                 exit 1
             fi
         else
             echo `date +"%Y-%m-%d %H:%M:%S"`" ***error failed to backup '$HOLD_ACTIVITY' files. Not cleaning the ILS either." >>$LOG
             echo "failed to backup '$HOLD_ACTIVITY' files. Not cleaning the ILS either." >&2
-            echo `date +"%Y-%m-%d %H:%M:%S"`" ***error failed to backup '$HOLD_ACTIVITY' files. Not cleaning the ILS either." | mailx -s"*warning removing inactive holds lists, chance of reloading next time!" "$EMAILS"
+            echo `date +"%Y-%m-%d %H:%M:%S"`" ***error failed to backup '$HOLD_ACTIVITY' files. Not cleaning the ILS either." | mailx -s"*warning removing inactive holds lists, chance of reloading next time!" -a"From:its@epl-el1.epl.ca"  "$EMAILS"
             exit 1
         fi
     else
@@ -325,10 +325,10 @@ while getopts ":cCdfilLx" opt; do
         echo "-l triggered to run data load" >&2
         drop_indices
         if load_inactive_holds; then
-            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds loaded successfully." | mailx -s"Inactive holds status: success" "$EMAILS"
+            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds loaded successfully." | mailx -s"Inactive holds status: success" -a"From:its@epl-el1.epl.ca"  "$EMAILS"
             cleanup
         else
-            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds load failed. Check log in its@EPL-EL1:~/InactiveHolds for details. Fix before it re-runs to avoid duplicate data loads." | mailx -s"Inactive holds status: fail" "$EMAILS"
+            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds load failed. Check log in its@EPL-EL1:~/InactiveHolds for details. Fix before it re-runs to avoid duplicate data loads." | mailx -s"Inactive holds status: fail" -a"From:its@epl-el1.epl.ca" "$EMAILS"
         fi
         ensure_indices
 		;;
@@ -337,10 +337,10 @@ while getopts ":cCdfilLx" opt; do
         fetch_files
         drop_indices
         if load_inactive_holds; then
-            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds loaded successfully." | mailx -s"Inactive holds status: success" "$EMAILS"
+            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds loaded successfully." | mailx -s"Inactive holds status: success" -a"From:its@epl-el1.epl.ca" "$EMAILS"
             cleanup
         else
-            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds load failed. Check log in $SERVER $WORKING_DIR for details. Fix before it re-runs to avoid duplicate data loads. Restore from backup in $WORKING_DIR/Data if necessary." | mailx -s"Inactive holds status: fail" "$EMAILS"
+            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds load failed. Check log in $SERVER $WORKING_DIR for details. Fix before it re-runs to avoid duplicate data loads. Restore from backup in $WORKING_DIR/Data if necessary." | mailx -s"Inactive holds status: fail" -a"From:its@epl-el1.epl.ca"  "$EMAILS"
         fi
         ensure_indices
 		;;
