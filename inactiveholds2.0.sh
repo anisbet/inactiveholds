@@ -53,17 +53,49 @@ Flags:
   -i: Create inactive holds database table indices.
   -f: Fetch inactive logs from ILS ($SERVER:$INACTIVE_HOLDS_DIR) 
       to the data directory ($WORKING_DIR/Data).
-  -l: Load data from data directory ($WORKING_DIR/Data).
-      The script searches for files then end in 'lst' to load,
-      then it updates the backup tar ball. To improve load times the indices are removed
-      the data is loaded, then the indices are re-added.
-  -L: Fetch new logs, load data, and clean files from ILS.
-      Same as -f, -l, -c, in that order.
+  -l: Loads $HOLD_ACTIVITY files from $WORKING_DIR/Data directory.
+      The table indices are removed prior to loading, and replaced after
+      the load is complete. No cleaning $HOLD_ACTIVITY* files is done so backup
+      your $HOLD_ACTIVITY* files and remove them or they will be reloaded
+      the next time the script is run, and this script is intended to be
+      run by cron. Check 'crontab -l' to confirm.
+  -L: Load data from data directory ($WORKING_DIR/Data).
+      The script searches for 'lst' files in $WORKING_DIR/Data, loads them
+      undates the backup tar ball, and cleans $WORKING_DIR/Data and if successful
+      cleans up $SERVER:$INACTIVE_HOLDS_DIR of any '$HOLD_ACTIVITY' files.
+      If the clean up activity is successful, indices are added back to the 
+      table(s) in $DATABASE.
+      Equivalent to -f, -l, -c, in that order.
+
+Schema:
+------- 
+CREATE TABLE $INACTIVE_HOLDS_TABLE_NAME (
+    PickupLibrary CHAR(6) NOT NULL,
+    InactiveReason CHAR(20) NOT NULL,
+    DateInactive INTEGER,
+    DateHoldPlaced INTEGER,
+    HoldType CHAR(2),
+    Override CHAR(2),
+    NumberOfPickupNotices INTEGER,
+    DateNotified INTEGER,
+    DateAvailable INTEGER,
+    ItemType CHAR(20)
+);
+CREATE INDEX IF NOT EXISTS idx_inactive_holds_pickup ON $INACTIVE_HOLDS_TABLE_NAME (PickupLibrary);
+CREATE INDEX IF NOT EXISTS idx_inactive_holds_reason ON $INACTIVE_HOLDS_TABLE_NAME (InactiveReason);
+CREATE INDEX IF NOT EXISTS idx_inactive_holds_itype ON $INACTIVE_HOLDS_TABLE_NAME (ItemType);
+CREATE INDEX IF NOT EXISTS idx_inactive_holds_htype ON $INACTIVE_HOLDS_TABLE_NAME (HoldType);
+CREATE INDEX IF NOT EXISTS idx_inactive_holds_date_inactive ON $INACTIVE_HOLDS_TABLE_NAME (DateInactive);
+CREATE INDEX IF NOT EXISTS idx_inactive_holds_date_available ON $INACTIVE_HOLDS_TABLE_NAME (DateAvailable);
+CREATE INDEX IF NOT EXISTS idx_inactive_holds_branch_date_inactive ON $INACTIVE_HOLDS_TABLE_NAME (PickupLibrary, DateInactive);
 
 Data desired:
+-------------
 
--- Table design
 PickupLibrary|InactiveReason|DateInactive|DateHoldPlaced|HoldType|Override|NumberOfPickupNotices|DateNotified|DateAvailable|ItemType
+
+Sample input
+------------
 # EPLCSD|FILLED|20190124|20171012|T|N|1|20190123|20190123|BOOK|
 # EPLWMC|FILLED|20171229|20171013|T|N|0|0|0|CD|
 # EPLZORDER|FILLED|20190125|20171104|C|Y|0|0|20190125|FLICKSTOGO|
@@ -82,6 +114,8 @@ PickupLibrary|InactiveReason|DateInactive|DateHoldPlaced|HoldType|Override|Numbe
  collected with the API:
    selhold -k"<\$TodaysDate" -l"FILLED"  -oIwlkptunm5 | selitem -iI -oSt  > Holds_activity_for_\$TodaysDate.lst
    selhold -k"<$DateNinetyDaysAgo"       -oIwlkptunm5 | selitem -iI -oSt >> Holds_activity_for_\$TodaysDate.lst
+   
+ Version: $VERSION
 EOFU!
 }
 
