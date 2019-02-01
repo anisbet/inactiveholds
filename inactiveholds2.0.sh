@@ -27,7 +27,7 @@
 SERVER=sirsi\@eplapp.library.ualberta.ca
 INACTIVE_HOLDS_DIR=/s/sirsi/Unicorn/EPLwork/cronjobscripts/Inactive_holds
 WORKING_DIR=/home/its/InactiveHolds
-VERSION="0.3"  # Dev.
+VERSION="1.0"  # Dev.
 DATABASE=inactive_holds.db
 BACKUP_DATA=inactive_holds.tar
 INACTIVE_HOLDS_TABLE_NAME=inactive_holds
@@ -358,9 +358,16 @@ while getopts ":cCdfilLx" opt; do
     l)	echo `date +"%Y-%m-%d %H:%M:%S"`" -l triggered to run data load" >>$LOG
         echo "-l triggered to run data load" >&2
         drop_indices
+        # Use a special clean up that doesn't wipe files from the ILS. We may be just restoring from backup.
         if load_inactive_holds; then
+            CURR_DIR=$(pwd)
             echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds loaded successfully." | mailx -s"Inactive holds status: success" -a"From:its@epl-el1.epl.ca"  "$EMAILS"
-            cleanup
+            cd $WORKING_DIR/Data
+            tar uvf $BACKUP_DATA $HOLD_ACTIVITY*
+            echo `date +"%Y-%m-%d %H:%M:%S"`" '$HOLD_ACTIVITY' files successfully backed up." >>$LOG
+            echo "'$HOLD_ACTIVITY' files successfully backed up." >&2
+            rm $HOLD_ACTIVITY*
+            cd $CURR_DIR  # Go back to where you were before we 'cd'd into the Data directory.
         else
             echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds load failed. Check log in its@EPL-EL1:~/InactiveHolds for details. Fix before it re-runs to avoid duplicate data loads." | mailx -s"Inactive holds status: fail" -a"From:its@epl-el1.epl.ca" "$EMAILS"
         fi
