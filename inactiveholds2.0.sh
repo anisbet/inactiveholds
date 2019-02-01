@@ -53,12 +53,11 @@ Flags:
   -i: Create inactive holds database table indices.
   -f: Fetch inactive logs from ILS ($SERVER:$INACTIVE_HOLDS_DIR) 
       to the data directory ($WORKING_DIR/Data).
-  -l: Loads $HOLD_ACTIVITY files from $WORKING_DIR/Data directory.
+  -l: Loads local $HOLD_ACTIVITY files from $WORKING_DIR/Data directory.
       The table indices are removed prior to loading, and replaced after
-      the load is complete. No cleaning $HOLD_ACTIVITY* files is done so backup
-      your $HOLD_ACTIVITY* files and remove them or they will be reloaded
-      the next time the script is run, and this script is intended to be
-      run by cron. Check 'crontab -l' to confirm.
+      the load is complete. Local $HOLD_ACTIVITY* files are backed up
+      and local files removed but no files on the ILS are touched.
+      Equivalent to restore.
   -L: Load data from data directory ($WORKING_DIR/Data).
       The script searches for 'lst' files in $WORKING_DIR/Data, loads them
       undates the backup tar ball, and cleans $WORKING_DIR/Data and if successful
