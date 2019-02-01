@@ -211,7 +211,7 @@ CREATE INDEX IF NOT EXISTS idx_inactive_holds_date_inactive ON $INACTIVE_HOLDS_T
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_date_available ON $INACTIVE_HOLDS_TABLE_NAME (DateAvailable);
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_branch_date_inactive ON $INACTIVE_HOLDS_TABLE_NAME (PickupLibrary, DateInactive);
 END_SQL
-        echo `date +"%Y-%m-%d %H:%M:%S"`" indexes added created" >>$LOG
+        echo `date +"%Y-%m-%d %H:%M:%S"`" indices created" >>$LOG
     else
         echo echo `date +"%Y-%m-%d %H:%M:%S"`" **error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >>$LOG
         echo "**error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >&2
