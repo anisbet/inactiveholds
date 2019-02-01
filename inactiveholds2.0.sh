@@ -27,14 +27,14 @@
 SERVER=sirsi\@eplapp.library.ualberta.ca
 INACTIVE_HOLDS_DIR=/s/sirsi/Unicorn/EPLwork/cronjobscripts/Inactive_holds
 WORKING_DIR=/home/its/InactiveHolds
-VERSION="0.2"  # Dev.
+VERSION="0.3"  # Dev.
 DATABASE=inactive_holds.db
 BACKUP_DATA=inactive_holds.tar
 INACTIVE_HOLDS_TABLE_NAME=inactive_holds
 HOLD_ACTIVITY=Holds_activity_for_
 DBASE=$WORKING_DIR/$DATABASE
 LOG=$WORKING_DIR/inactive_holds.log
-
+EMAILS=andrew.nisbet\@epl.ca
 # Displays the usage for this product.
 # param:  none
 # return: none
@@ -113,50 +113,6 @@ confirm()
 	esac
 }
 
-# Drops all the standard tables.
-# param:  name of the table to drop.
-reset_table()
-{
-    local table=$1
-    if [ -s "$DBASE" ]; then   # If the database is not empty.
-        ANSWER=$(confirm "reset table $table ")
-        if [ "$ANSWER" == "1" ]; then
-            echo `date +"%Y-%m-%d %H:%M:%S"`" table will be preserved. exiting" >>$LOG
-            echo "table will be preserved. exiting" >&2
-            exit 1
-        fi
-        echo "DROP TABLE $table;" | sqlite3 $DBASE 2>/dev/null
-        echo 0
-    else
-        echo `date +"%Y-%m-%d %H:%M:%S"`" $DBASE doesn't exist or is empty. Nothing to drop." >>$LOG
-        echo "$DBASE doesn't exist or is empty. Nothing to drop." >&2
-        echo 1
-    fi
-}
-
-# This function builds the standard tables used for lookups. Since the underlying 
-# database is a simple sqlite3 database, and there is no true date type we will be
-# storing all date values as ANSI dates (YYYYMMDDHHMMSS).
-# You must exend this function for each new table you wish to add.
-ensure_tables()
-{
-    if [ -s "$DBASE" ]; then   # If the database doesn't exists and isn't empty.
-        # Test table(s) so we don't create tables that exist.
-        ## Inactive holds table
-        if echo "SELECT COUNT(*) FROM $INACTIVE_HOLDS_TABLE_NAME;" | sqlite3 $DBASE 2>/dev/null >/dev/null; then
-            echo `date +"%Y-%m-%d %H:%M:%S"`" confirmed $INACTIVE_HOLDS_TABLE_NAME exists..." >>$LOG
-            echo "confirmed $INACTIVE_HOLDS_TABLE_NAME exists..." >&2
-            echo 1
-        else
-            create_database
-            echo 0
-        fi # End of creating user table.
-    else
-        create_database
-        echo 0
-    fi
-}
-
 # Creates the one table for inactive holds data.
 # param:  none
 # return: none
@@ -204,7 +160,6 @@ CREATE TABLE $INACTIVE_HOLDS_TABLE_NAME (
 );
 END_SQL
         echo `date +"%Y-%m-%d %H:%M:%S"`" $DBASE created" >>$LOG
-        echo 0
     fi
 }
 
@@ -224,7 +179,6 @@ CREATE INDEX IF NOT EXISTS idx_inactive_holds_date_available ON $INACTIVE_HOLDS_
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_branch_date_inactive ON $INACTIVE_HOLDS_TABLE_NAME (PickupLibrary, DateInactive);
 END_SQL
         echo `date +"%Y-%m-%d %H:%M:%S"`" indexes added created" >>$LOG
-        echo 0
     else
         echo echo `date +"%Y-%m-%d %H:%M:%S"`" **error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >>$LOG
         echo "**error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >&2
@@ -249,7 +203,6 @@ DROP INDEX IF EXISTS idx_inactive_holds_date_available;
 DROP INDEX IF EXISTS idx_inactive_holds_branch_date_inactive;
 END_SQL
         echo `date +"%Y-%m-%d %H:%M:%S"`" indices dropped." >>$LOG
-        echo 0
     else
         echo `date +"%Y-%m-%d %H:%M:%S"`" **error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >>$LOG
         echo "**error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >&2
@@ -262,6 +215,7 @@ END_SQL
 # return: none
 load_inactive_holds()
 {
+    local failed_load_count=0
     if [ -s "$DBASE" ]; then
         for log_list in $(ls $WORKING_DIR/Data/$HOLD_ACTIVITY*); do
             cat $log_list | /home/its/bin/pipe.pl -ocontinue -m"c0:INSERT INTO inactive\_holds (PickupLibrary\,InactiveReason\,DateInactive\,DateHoldPlaced\,HoldType\,Override\,NumberOfPickupNotices\,DateNotified\,DateAvailable\,ItemType) VALUES (\"######\",c1:\"####################\",c2:#,c3:#,c4:\"##\",c5:\"##\",c6:#,c7:#,c8:#,c9:\"####################\");" -h, >$log_list.sql
@@ -273,16 +227,17 @@ load_inactive_holds()
                 echo `date +"%Y-%m-%d %H:%M:%S"`" loaded successfully." >>$LOG
                 echo "loaded successfully." >&2
             else
+                ((failed_load_count+=1))
                 echo `date +"%Y-%m-%d %H:%M:%S"`" * warn: no records to load. $log_list.sql contains no statements." >>$LOG
                 echo "* warn: no records to load. $log_list.sql contains no statements." >&2
             fi
         done
-        echo 0
     else
         echo `date +"%Y-%m-%d %H:%M:%S"`" **error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >>$LOG
         echo "**error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >&2
         exit 1
     fi
+    echo $failed_load_count
 }
 
 # Backs up data in the $WORKING_DIR/Data directory, then removes the '$HOLD_ACTIVITY' files
@@ -302,15 +257,17 @@ cleanup()
             echo "'$HOLD_ACTIVITY' files successfully backed up." >&2
             rm $HOLD_ACTIVITY*
             ## Uncomment below after testing.
-            # if ! ssh $SERVER "rm $INACTIVE_HOLDS_DIR/$HOLD_ACTIVITY*"; then
-                # echo `date +"%Y-%m-%d %H:%M:%S"`" *warn: failed to clean up '$HOLD_ACTIVITY' files from ILS." >>$LOG
-                # echo "*warn: failed to clean up '$HOLD_ACTIVITY' files from ILS." >&2
-                # echo "*warn: Do it manually to avoid duplicate inserts of data." >&2
-                # echo 1
-            # fi
+            if ! ssh -C $SERVER "rm $INACTIVE_HOLDS_DIR/$HOLD_ACTIVITY*"; then
+                echo `date +"%Y-%m-%d %H:%M:%S"`" *warning: failed to clean up '$HOLD_ACTIVITY' files from $SERVER $INACTIVE_HOLDS_DIR. Do it manually to avoid duplicate inserts of data." >>$LOG
+                echo "*warn: failed to clean up '$HOLD_ACTIVITY' files from ILS." >&2
+                echo "*warn: Do it manually to avoid duplicate inserts of data." >&2
+                echo `date +"%Y-%m-%d %H:%M:%S"`" *warning: failed to clean up '$HOLD_ACTIVITY' files from $SERVER $INACTIVE_HOLDS_DIR. Do it manually to avoid duplicate inserts of data." | mailx -s"*warning removing inactive holds lists, chance of reloading next time!" "$EMAILS"
+                exit 1
+            fi
         else
-            echo `date +"%Y-%m-%d %H:%M:%S"`" failed to backup '$HOLD_ACTIVITY' files. Not cleaning the ILS either." >>$LOG
+            echo `date +"%Y-%m-%d %H:%M:%S"`" ***error failed to backup '$HOLD_ACTIVITY' files. Not cleaning the ILS either." >>$LOG
             echo "failed to backup '$HOLD_ACTIVITY' files. Not cleaning the ILS either." >&2
+            echo `date +"%Y-%m-%d %H:%M:%S"`" ***error failed to backup '$HOLD_ACTIVITY' files. Not cleaning the ILS either." | mailx -s"*warning removing inactive holds lists, chance of reloading next time!" "$EMAILS"
             exit 1
         fi
     else
@@ -318,7 +275,6 @@ cleanup()
         echo "$WORKING_DIR/Data is required but not created, exiting because nothing to clean up." >&2
         exit 1 
     fi
-    echo 0
 }
 
 # Fetches files from the ILS, creating the Data directory if required.
@@ -345,39 +301,48 @@ fetch_files()
 # Argument processing.
 while getopts ":cCdfilLx" opt; do
   case $opt in
-	c)	echo "-c triggered to clean up the files on the ILS ($SERVER)." >>$LOG
+	c)	echo `date +"%Y-%m-%d %H:%M:%S"`" -c triggered to clean up the files on the ILS ($SERVER)." >>$LOG
         echo "-c triggered to clean up the files on the ILS ($SERVER)." >&2
         cleanup
 		;;
-    C)	echo "-C triggered to create new database (if necessary)." >>$LOG
+    C)	echo `date +"%Y-%m-%d %H:%M:%S"`" -C triggered to create new database (if necessary)." >>$LOG
         echo "-C triggered to create new database (if necessary)." >&2
         create_database
 		;;
-    d)	echo "-d triggered to drop indices from $DBASE." >>$LOG
+    d)	echo `date +"%Y-%m-%d %H:%M:%S"`" -d triggered to drop indices from $DBASE." >>$LOG
         echo "-d triggered to drop indices from $DBASE." >&2
         drop_indices
 		;;
-    f)	echo "-f triggered to fetch files from the ILS ($SERVER)." >>$LOG
+    f)	echo `date +"%Y-%m-%d %H:%M:%S"`" -f triggered to fetch files from the ILS ($SERVER)." >>$LOG
         echo "-f triggered to fetch files from the ILS ($SERVER)." >&2
         fetch_files
 		;;
-    i)	echo "-i triggered to rebuild indices" >>$LOG
+    i)	echo `date +"%Y-%m-%d %H:%M:%S"`" -i triggered to rebuild indices" >>$LOG
         echo "-i triggered to rebuild indices" >&2
         ensure_indices
 		;;
-    l)	echo "-l triggered to run data load" >>$LOG
+    l)	echo `date +"%Y-%m-%d %H:%M:%S"`" -l triggered to run data load" >>$LOG
         echo "-l triggered to run data load" >&2
         drop_indices
-        load_inactive_holds
+        if load_inactive_holds; then
+            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds loaded successfully." | mailx -s"Inactive holds status: success" "$EMAILS"
+            cleanup
+        else
+            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds load failed. Check log in its@EPL-EL1:~/InactiveHolds for details. Fix before it re-runs to avoid duplicate data loads." | mailx -s"Inactive holds status: fail" "$EMAILS"
+        fi
         ensure_indices
 		;;
-    L)	echo "-L triggered to run" >>$LOG
+    L)	echo `date +"%Y-%m-%d %H:%M:%S"`" -L triggered to fetch, drop indices, load data, clean up if successful, and replace indices." >>$LOG
         echo "-L triggered to run" >&2
         fetch_files
         drop_indices
-        load_inactive_holds
+        if load_inactive_holds; then
+            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds loaded successfully." | mailx -s"Inactive holds status: success" "$EMAILS"
+            cleanup
+        else
+            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds load failed. Check log in $SERVER $WORKING_DIR for details. Fix before it re-runs to avoid duplicate data loads. Restore from backup in $WORKING_DIR/Data if necessary." | mailx -s"Inactive holds status: fail" "$EMAILS"
+        fi
         ensure_indices
-        cleanup
 		;;
 	x)	usage
 		;;
