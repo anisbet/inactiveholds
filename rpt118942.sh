@@ -28,14 +28,15 @@
 TICKET=118942
 WORKING_DIR=/home/its/InactiveHolds/Reports/$TICKET
 DBASE_DIR=/home/its/InactiveHolds
-VERSION="0.1"  # Dev.
+VERSION="0.2"  # Dev.
 ### CHANGE THIS TO inactive_holds.db once all historical data has been loaded.
 DATABASE=inactive_holds.test.db
 DBASE=$DBASE_DIR/$DATABASE
 PIPE=/home/its/bin/pipe.pl
 START_DATE=20180101   # See -d for setting the start date of the report.
 END_DATE=20181231     # See -d for more information.
-REPORT=$WORKING_DIR/$TICKET.csv
+IH_REPORT=$WORKING_DIR/$TICKET.inactive.holds.csv
+CKOS_REPORT=$WORKING_DIR/$TICKET.checkouts.csv
 ADDRESSES="andrew.nisbet@epl.ca"
 
 ########## Functions ###############
@@ -193,18 +194,36 @@ rpt_inactive_holds_by_branch()
     local end=$2
     local start_date=$(echo $start | $PIPE -mc0:####-##-#)
     local end_date=$(echo $end | $PIPE -mc0:####-##-#)
+    echo "collecting inactive hold data..." >&2
     local sql="SELECT PickupLibrary,InactiveReason,ItemType,count(ItemType) FROM inactive_holds WHERE DateInactive>=$start AND DateInactive<=$end GROUP BY PickupLibrary,InactiveReason,ItemType ORDER BY PickupLibrary;"
     echo ${sql} | sqlite3 $DBASE >$TICKET.rpt
     if [ ! -e "$TICKET.rpt" ]; then
         echo "report failed to produce results" >&2
         exit 1
     fi
-    cat $TICKET.rpt | $PIPE -TCSV:"Branch,Inactive reason,Item type,Count,$start_date,$end_date" >$REPORT
-        if [ ! -e "$REPORT" ]; then
+    cat $TICKET.rpt | $PIPE -TCSV:"Branch,Inactive reason,Item type,Count,$start_date,$end_date" >$IH_REPORT
+        if [ ! -e "$IH_REPORT" ]; then
         echo "$0 failed to produce csv output in "`pwd`"." | mailx -s"** Report $TICKET failed." -a"From: its@epl-el1.epl.ca" "$ADDRESSES"
         exit 1
     fi
-    echo "$0 report results attached." | mailx -s"Report $TICKET results" -a"From: its@epl-el1.epl.ca" -A $REPORT "$ADDRESSES"
+    echo "Inactive holds report results are attached." | mailx -s"Report for ticket $TICKET results" -a"From: its@epl-el1.epl.ca" -A $IH_REPORT "$ADDRESSES"
+    echo "done." >&2
+    echo "collecting checkout data from production..." >&2
+    # To get the comparison data from Quad of total checkouts:
+    # SELECT Branch,Type,count(ItemId) FROM ckos INNER JOIN item ON ItemId=Id WHERE Date>=$start000000 AND Date<=$end000000 GROUP BY Branch,Type ORDER BY Branch;
+    local sql_production="SELECT Branch,Type,count(ItemId) FROM ckos INNER JOIN item ON ItemId=Id WHERE Date>=${start}000000 AND Date<=${end}000000 GROUP BY Branch,Type ORDER BY Branch;"
+    ssh -C sirsi@eplapp.library.ualberta.ca "echo \"$sql_production\" | /bin/sqlite3 /s/sirsi/Unicorn/EPLwork/cronjobscripts/Quad/quad.db" >$TICKET.prod.rpt
+    if [ ! -e "$TICKET.prod.rpt" ]; then
+        echo "report on production failed to produce results" >&2
+        exit 1
+    fi
+    cat $TICKET.prod.rpt | $PIPE -TCSV:"Branch,Item type,Count,$start_date,$end_date" >$CKOS_REPORT
+        if [ ! -e "$CKOS_REPORT" ]; then
+        echo "$0 failed to produce csv output in "`pwd`"." | mailx -s"** Report of checkouts for ticket $TICKET failed." -a"From: its@epl-el1.epl.ca" "$ADDRESSES"
+        exit 1
+    fi
+    echo "Checkout report from EPLAPP are attached." | mailx -s"Report for ticket $TICKET results" -a"From: its@epl-el1.epl.ca" -A $CKOS_REPORT "$ADDRESSES"
+    echo "done." >&2
 }
 
 ########## Application ###############
