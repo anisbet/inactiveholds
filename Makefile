@@ -27,12 +27,14 @@
 #
 #      0.0 - Dev.
 #########################################################################
-SERVER=its\@epl-el1.epl.ca
+SERVER=its@epl-el1.epl.ca
 REMOTE=/home/its/InactiveHolds
 LOCAL=~/projects/inactiveholds2.0
 APP=inactiveholds2.0.sh
+RPT_A=rpt118942.sh
 .PHONY: test run
-
+reports:
+	scp ${LOCAL}/${RPT_A} ${SERVER}:${REMOTE}/Reports/118942
 install: 
 	scp ${LOCAL}/${APP} ${SERVER}:${REMOTE}
 
