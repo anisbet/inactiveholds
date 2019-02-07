@@ -28,9 +28,8 @@
 TICKET=118942
 WORKING_DIR=/home/its/InactiveHolds/Reports/$TICKET
 DBASE_DIR=/home/its/InactiveHolds
-VERSION="0.2"  # Dev.
-### CHANGE THIS TO inactive_holds.db once all historical data has been loaded.
-DATABASE=inactive_holds.test.db
+VERSION="1.0"  # Tested.
+DATABASE=inactive_holds.db
 DBASE=$DBASE_DIR/$DATABASE
 PIPE=/home/its/bin/pipe.pl
 START_DATE=20180101   # See -d for setting the start date of the report.
