@@ -248,7 +248,6 @@ while getopts ":c:r:x" opt; do
         echo "\$END_DATE set to $END_DATE" >&2
         echo "preparing SQL" >&2
         rpt_checkouts $START_DATE $END_DATE
-        echo "done" >&2
         ;;
     ### Run inactive holds report.
     r)	echo "-r report triggered." >&2
@@ -258,7 +257,6 @@ while getopts ":c:r:x" opt; do
         echo "\$END_DATE set to $END_DATE" >&2
         echo "preparing SQL" >&2
         rpt_inactive_holds_by_branch $START_DATE $END_DATE 
-        echo "done" >&2
         ;;
     x)	usage
         ;;
