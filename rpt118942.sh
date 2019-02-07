@@ -28,7 +28,7 @@
 TICKET=118942
 WORKING_DIR=/home/its/InactiveHolds/Reports/$TICKET
 DBASE_DIR=/home/its/InactiveHolds
-VERSION="1.0"  # Tested.
+VERSION="1.1"  # Refactor out ckos queries to another switch since we don't have as much data about ckos.
 DATABASE=inactive_holds.db
 DBASE=$DBASE_DIR/$DATABASE
 PIPE=/home/its/bin/pipe.pl
@@ -115,8 +115,12 @@ usage()
  that originated from Pam Ryan in 2014
  
 Flags:
- -d{yyyymmdd,yyyymmdd}: Date range of the query. Dates are inclusive and must be in the format of 'yyyymmdd'
-     separated by a ',' - comma.
+ -c{yyyymmdd,yyyymmdd}: Run checkouts query (for comparisons) with the argument date
+     range. Dates are inclusive and must be in the format of 'yyyymmdd' and be 
+     separated by a ',' - comma. The report is mailed to $ADDRESSES.
+ -r{yyyymmdd,yyyymmdd}: Run inactive holds query with the argument date
+     range. Dates are inclusive and must be in the format of 'yyyymmdd' and be 
+     separated by a ',' - comma. The report is mailed to $ADDRESSES.
  -x: This help message.
  
 ==snip==
@@ -150,15 +154,9 @@ confirm()
 	read a
 	case "$a" in
 		[yY])
-			if [ "$VERBOSE" != 1 ]; then
-				printf "yes selected.\n" >&2
-			fi
 			echo 0
 			;;
 		*)
-			if [ "$VERBOSE" != 1 ]; then
-				printf "no selected.\n" >&2
-			fi
 			echo 1
 			;;
 	esac
@@ -207,6 +205,19 @@ rpt_inactive_holds_by_branch()
     fi
     echo "Inactive holds report results are attached." | mailx -s"Report for ticket $TICKET results" -a"From: its@epl-el1.epl.ca" -A $IH_REPORT "$ADDRESSES"
     echo "done." >&2
+}
+
+# Another request from this ticket is cko information. This is gather from the quad database on EPLAPP
+# but there is currently just a year's worth there to mine. I have separated the reports since running 
+# one without the other is a requirement.
+# param:  start date in yyyymmdd format.
+# param:  end date in yyyymmdd format.
+rpt_checkouts()
+{
+    local start=$1
+    local end=$2
+    local start_date=$(echo $start | $PIPE -mc0:####-##-#)
+    local end_date=$(echo $end | $PIPE -mc0:####-##-#)
     echo "collecting checkout data from production..." >&2
     # To get the comparison data from Quad of total checkouts:
     # SELECT Branch,Type,count(ItemId) FROM ckos INNER JOIN item ON ItemId=Id WHERE Date>=$start000000 AND Date<=$end000000 GROUP BY Branch,Type ORDER BY Branch;
@@ -227,24 +238,31 @@ rpt_inactive_holds_by_branch()
 
 ########## Application ###############
 # Argument processing.
-while getopts ":d:rx" opt; do
+while getopts ":c:r:x" opt; do
   case $opt in
-    d)	echo "-d report triggered with params $OPTARG." >&2
+    ### Run the checkouts report.
+    c)	echo "-c report triggered to collect checkout data from EPLAPP during the date range of $OPTARG." >&2
         START_DATE=$(echo $OPTARG | $PIPE -W, -oc0 -tc0)
         END_DATE=$(echo $OPTARG | $PIPE -W, -oc1 -tc1)
         echo "\$START_DATE set to $START_DATE" >&2
         echo "\$END_DATE set to $END_DATE" >&2
-        ;;
-    ### Run report.
-    r)	echo "-r report triggered." >&2
         echo "preparing SQL" >&2
-        
+        rpt_checkouts $START_DATE $END_DATE
+        echo "done" >&2
+        ;;
+    ### Run inactive holds report.
+    r)	echo "-r report triggered." >&2
+        START_DATE=$(echo $OPTARG | $PIPE -W, -oc0 -tc0)
+        END_DATE=$(echo $OPTARG | $PIPE -W, -oc1 -tc1)
+        echo "\$START_DATE set to $START_DATE" >&2
+        echo "\$END_DATE set to $END_DATE" >&2
+        echo "preparing SQL" >&2
+        rpt_inactive_holds_by_branch $START_DATE $END_DATE 
         echo "done" >&2
         ;;
     x)	usage
         ;;
   esac
 done
-# Run report(s)
-rpt_inactive_holds_by_branch $START_DATE $END_DATE 
+
 # EOF
