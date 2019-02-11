@@ -41,7 +41,7 @@ EMAILS=andrew.nisbet\@epl.ca
 # return: none
 usage()
 {
-    cat #<< EOFU!
+    cat << EOFU!
  Usage: $0 
   Maintains a database that houses inactive holds data.
 
