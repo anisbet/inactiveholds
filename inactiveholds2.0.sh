@@ -27,8 +27,9 @@
 SERVER=sirsi\@eplapp.library.ualberta.ca
 INACTIVE_HOLDS_DIR=/s/sirsi/Unicorn/EPLwork/cronjobscripts/Inactive_holds
 WORKING_DIR=/home/its/InactiveHolds
-VERSION="1.0"  # Dev.
-DATABASE=inactive_holds.db
+VERSION="2.0_X"  # Dev.
+#### Test version.
+DATABASE=inactive_holds.test.db
 BACKUP_DATA=inactive_holds.tar
 INACTIVE_HOLDS_TABLE_NAME=inactive_holds
 HOLD_ACTIVITY=Holds_activity_for_
@@ -40,7 +41,7 @@ EMAILS=andrew.nisbet\@epl.ca
 # return: none
 usage()
 {
-    cat << EOFU!
+    cat #<< EOFU!
  Usage: $0 
   Maintains a database that houses inactive holds data.
 
@@ -78,7 +79,10 @@ CREATE TABLE $INACTIVE_HOLDS_TABLE_NAME (
     NumberOfPickupNotices INTEGER,
     DateNotified INTEGER,
     DateAvailable INTEGER,
-    ItemType CHAR(20)
+    ItemType CHAR(20),
+    DateInserted INTEGER NOT NULL,
+    Id INTEGER NOT NULL,
+    PRIMARY KEY (DateInserted, Id)
 );
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_pickup ON $INACTIVE_HOLDS_TABLE_NAME (PickupLibrary);
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_reason ON $INACTIVE_HOLDS_TABLE_NAME (InactiveReason);
@@ -87,17 +91,18 @@ CREATE INDEX IF NOT EXISTS idx_inactive_holds_htype ON $INACTIVE_HOLDS_TABLE_NAM
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_date_inactive ON $INACTIVE_HOLDS_TABLE_NAME (DateInactive);
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_date_available ON $INACTIVE_HOLDS_TABLE_NAME (DateAvailable);
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_branch_date_inactive ON $INACTIVE_HOLDS_TABLE_NAME (PickupLibrary, DateInactive);
+CREATE INDEX IF NOT EXISTS idx_inactive_holds_date_inserted_id ON $INACTIVE_HOLDS_TABLE_NAME (DateInserted, Id);
 
 Data desired:
 -------------
 
-PickupLibrary|InactiveReason|DateInactive|DateHoldPlaced|HoldType|Override|NumberOfPickupNotices|DateNotified|DateAvailable|ItemType
+PickupLibrary|InactiveReason|DateInactive|DateHoldPlaced|HoldType|Override|NumberOfPickupNotices|DateNotified|DateAvailable|ItemType|DateInserted|Id
 
 Sample input
 ------------
-# EPLCSD|FILLED|20190124|20171012|T|N|1|20190123|20190123|BOOK|
-# EPLWMC|FILLED|20171229|20171013|T|N|0|0|0|CD|
-# EPLZORDER|FILLED|20190125|20171104|C|Y|0|0|20190125|FLICKSTOGO|
+# EPLCSD|FILLED|20190124|20171012|T|N|1|20190123|20190123|BOOK||20190129|1
+# EPLWMC|FILLED|20171229|20171013|T|N|0|0|0|CD||20190129|2
+# EPLZORDER|FILLED|20190125|20171104|C|Y|0|0|20190125|FLICKSTOGO||20190129|3
   holds:
     PickupLibrary,
     InactiveReason,
@@ -109,6 +114,8 @@ Sample input
     DateNotified,
     DateAvailable,
     ItemType,
+    DateInserted,
+    Id
     
  collected with the API:
    selhold -k"<\$TodaysDate" -l"FILLED"  -oIwlkptunm5 | selitem -iI -oSt  > Holds_activity_for_\$TodaysDate.lst
@@ -162,7 +169,10 @@ create_database()
     # NumberOfPickupNotices INTEGER,
     # DateNotified INTEGER,
     # DateAvailable INTEGER,
-    # ItemType CHAR(20)
+    # ItemType CHAR(20),
+    # DateInserted INTEGER NOT NULL,
+    # Id INTEGER NOT NULL,
+    # PRIMARY KEY (DateInserted, Id)
     # );
     ######### schema ###########
     # None of the data in the table individually, or collectively can be considered a primary key candidate.
@@ -189,7 +199,10 @@ CREATE TABLE $INACTIVE_HOLDS_TABLE_NAME (
     NumberOfPickupNotices INTEGER,
     DateNotified INTEGER,
     DateAvailable INTEGER,
-    ItemType CHAR(20)
+    ItemType CHAR(20),
+    DateInserted INTEGER NOT NULL,
+    Id INTEGER NOT NULL,
+    PRIMARY KEY (DateInserted, Id)
 );
 END_SQL
         echo `date +"%Y-%m-%d %H:%M:%S"`" $DBASE created" >>$LOG
@@ -210,6 +223,7 @@ CREATE INDEX IF NOT EXISTS idx_inactive_holds_htype ON $INACTIVE_HOLDS_TABLE_NAM
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_date_inactive ON $INACTIVE_HOLDS_TABLE_NAME (DateInactive);
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_date_available ON $INACTIVE_HOLDS_TABLE_NAME (DateAvailable);
 CREATE INDEX IF NOT EXISTS idx_inactive_holds_branch_date_inactive ON $INACTIVE_HOLDS_TABLE_NAME (PickupLibrary, DateInactive);
+CREATE INDEX IF NOT EXISTS idx_inactive_holds_date_inserted_id ON $INACTIVE_HOLDS_TABLE_NAME (DateInserted, Id);
 END_SQL
         echo `date +"%Y-%m-%d %H:%M:%S"`" indices created" >>$LOG
     else
@@ -234,6 +248,7 @@ DROP INDEX IF EXISTS idx_inactive_holds_htype;
 DROP INDEX IF EXISTS idx_inactive_holds_date_inactive;
 DROP INDEX IF EXISTS idx_inactive_holds_date_available;
 DROP INDEX IF EXISTS idx_inactive_holds_branch_date_inactive;
+DROP INDEX IF EXISTS idx_inactive_holds_date_inserted_id;
 END_SQL
         echo `date +"%Y-%m-%d %H:%M:%S"`" indices dropped." >>$LOG
     else
@@ -251,12 +266,18 @@ load_inactive_holds()
     local failed_load_count=0
     if [ -s "$DBASE" ]; then
         for log_list in $(ls $WORKING_DIR/Data/$HOLD_ACTIVITY*); do
-            cat $log_list | /home/its/bin/pipe.pl -ocontinue -m"c0:INSERT INTO inactive\_holds (PickupLibrary\,InactiveReason\,DateInactive\,DateHoldPlaced\,HoldType\,Override\,NumberOfPickupNotices\,DateNotified\,DateAvailable\,ItemType) VALUES (\"######\",c1:\"####################\",c2:#,c3:#,c4:\"##\",c5:\"##\",c6:#,c7:#,c8:#,c9:\"####################\");" -h, >$log_list.sql
+            ## Produces '20150821' as the insert date from the file name.
+            local insert_date=$(echo $log_list | /home/its/bin/pipe.pl -W'/' -olast | /home/its/bin/pipe.pl -Sc0:19-27) 
+            ## Add the primary key for the database which is the last 2 fields; the insert date, and 
+            ## an auto-increment field.
+            cat $log_list | /home/its/bin/pipe.pl -mc9:####################\|${insert_date}_ -2c10:1 >$log_list.converted
+            cat $log_list.converted | /home/its/bin/pipe.pl -ocontinue -m"c0:INSERT OR IGNORE INTO inactive\_holds (PickupLibrary\,InactiveReason\,DateInactive\,DateHoldPlaced\,HoldType\,Override\,NumberOfPickupNotices\,DateNotified\,DateAvailable\,ItemType,DateInserted,Id) VALUES (\"######\",c1:\"####################\",c2:#,c3:#,c4:\"##\",c5:\"##\",c6:#,c7:#,c8:#,c9:\"####################\",c10:#,c11:#);" -h, >$log_list.sql
             if [ -f "$log_list.sql" ]; then
                 echo `date +"%Y-%m-%d %H:%M:%S"`" loading $log_list.sql..." >>$LOG
                 echo "loading $log_list.sql..." >&2
                 cat $log_list.sql | sqlite3 $DBASE
                 rm $log_list.sql
+                rm $log_list.converted
                 echo `date +"%Y-%m-%d %H:%M:%S"`" loaded successfully." >>$LOG
                 echo "loaded successfully." >&2
             else
