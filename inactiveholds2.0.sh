@@ -27,7 +27,7 @@
 SERVER=sirsi\@eplapp.library.ualberta.ca
 INACTIVE_HOLDS_DIR=/s/sirsi/Unicorn/EPLwork/cronjobscripts/Inactive_holds
 WORKING_DIR=/home/its/InactiveHolds
-VERSION="2.0_X"  # Dev.
+VERSION="2.0"  # Dev.
 #### Test version.
 DATABASE=inactive_holds.test.db
 BACKUP_DATA=inactive_holds.tar
@@ -271,13 +271,13 @@ load_inactive_holds()
             ## Add the primary key for the database which is the last 2 fields; the insert date, and 
             ## an auto-increment field.
             cat $log_list | /home/its/bin/pipe.pl -mc9:####################\|${insert_date}_ -2c10:1 >$log_list.converted
-            cat $log_list.converted | /home/its/bin/pipe.pl -ocontinue -m"c0:INSERT OR IGNORE INTO inactive\_holds (PickupLibrary\,InactiveReason\,DateInactive\,DateHoldPlaced\,HoldType\,Override\,NumberOfPickupNotices\,DateNotified\,DateAvailable\,ItemType,DateInserted,Id) VALUES (\"######\",c1:\"####################\",c2:#,c3:#,c4:\"##\",c5:\"##\",c6:#,c7:#,c8:#,c9:\"####################\",c10:#,c11:#);" -h, >$log_list.sql
+            cat $log_list.converted | /home/its/bin/pipe.pl -ocontinue -m"c0:INSERT OR IGNORE INTO inactive\_holds (PickupLibrary\,InactiveReason\,DateInactive\,DateHoldPlaced\,HoldType\,Override\,NumberOfPickupNotices\,DateNotified\,DateAvailable\,ItemType\,DateInserted\,Id) VALUES (\"######\",c1:\"####################\",c2:#,c3:#,c4:\"##\",c5:\"##\",c6:#,c7:#,c8:#,c9:\"####################\",c10:#,c11:#);" -h, -C"num_cols:width12-12" -TCHUNKED:"BEGIN=BEGIN TRANSACTION;,SKIP=10000.END TRANSACTION;BEGIN TRANSACTION;,END=END TRANSACTION;" >$log_list.sql
             if [ -f "$log_list.sql" ]; then
                 echo `date +"%Y-%m-%d %H:%M:%S"`" loading $log_list.sql..." >>$LOG
                 echo "loading $log_list.sql..." >&2
                 cat $log_list.sql | sqlite3 $DBASE
-                rm $log_list.sql
-                rm $log_list.converted
+                # rm $log_list.sql
+                # rm $log_list.converted
                 echo `date +"%Y-%m-%d %H:%M:%S"`" loaded successfully." >>$LOG
                 echo "loaded successfully." >&2
             else
