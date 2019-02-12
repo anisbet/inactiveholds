@@ -27,15 +27,17 @@
 SERVER=sirsi\@eplapp.library.ualberta.ca
 INACTIVE_HOLDS_DIR=/s/sirsi/Unicorn/EPLwork/cronjobscripts/Inactive_holds
 WORKING_DIR=/home/its/InactiveHolds
-VERSION="2.0"  # Dev.
+VERSION="2.1"  # Dev.
 #### Test version.
-DATABASE=inactive_holds.test.db
+DATABASE=inactive_holds.db
 BACKUP_DATA=inactive_holds.tar
 INACTIVE_HOLDS_TABLE_NAME=inactive_holds
 HOLD_ACTIVITY=Holds_activity_for_
 DBASE=$WORKING_DIR/$DATABASE
 LOG=$WORKING_DIR/inactive_holds.log
 EMAILS=andrew.nisbet\@epl.ca
+TRUE=0
+FALSE=1
 # Displays the usage for this product.
 # param:  none
 # return: none
@@ -115,7 +117,8 @@ Sample input
     DateAvailable,
     ItemType,
     DateInserted,
-    Id
+    Id,
+    Primary key on (DateInserted, Id)
     
  collected with the API:
    selhold -k"<\$TodaysDate" -l"FILLED"  -oIwlkptunm5 | selitem -iI -oSt  > Holds_activity_for_\$TodaysDate.lst
@@ -133,7 +136,7 @@ confirm()
 	if [ -z "$1" ]; then
 		echo `date +"%Y-%m-%d %H:%M:%S"`" ** error, confirm_yes requires a message." >>$LOG
 		echo "** error, confirm_yes requires a message." >&2
-		exit 1
+		exit $FALSE
 	fi
 	local message="$1"
 	echo `date +"%Y-%m-%d %H:%M:%S"`" $message? y/[n]: " >>$LOG
@@ -143,12 +146,12 @@ confirm()
 		[yY])
 			echo `date +"%Y-%m-%d %H:%M:%S"`" yes selected." >>$LOG
 			echo "yes selected." >&2
-			echo 0
+			echo $TRUE
 			;;
 		*)
 			echo `date +"%Y-%m-%d %H:%M:%S"`" no selected." >>$LOG
 			echo "no selected." >&2
-			echo 1
+			echo $FALSE
 			;;
 	esac
 }
@@ -179,16 +182,17 @@ create_database()
     if [ -s "$DBASE" ]; then
         echo "*warn: $DBASE exists!" >&2
         ANSWER=$(confirm "create $DBASE ")
-        if [ "$ANSWER" == "0" ]; then
+        if [ "$ANSWER" == "$TRUE" ]; then
             echo `date +"%Y-%m-%d %H:%M:%S"`" creating new $DBASE" >>$LOG
             echo "creating new $DBASE" >&2
             rm $DBASE
         else
             echo `date +"%Y-%m-%d %H:%M:%S"`" Keeping database $DBASE. Exiting." >>$LOG
             echo "Keeping database $DBASE. Exiting." >&2
+            exit $TRUE
         fi
-    else
-        sqlite3 $DBASE <<END_SQL
+    fi
+    sqlite3 $DBASE <<END_SQL
 CREATE TABLE $INACTIVE_HOLDS_TABLE_NAME (
     PickupLibrary CHAR(6) NOT NULL,
     InactiveReason CHAR(20) NOT NULL,
@@ -205,8 +209,7 @@ CREATE TABLE $INACTIVE_HOLDS_TABLE_NAME (
     PRIMARY KEY (DateInserted, Id)
 );
 END_SQL
-        echo `date +"%Y-%m-%d %H:%M:%S"`" $DBASE created" >>$LOG
-    fi
+    echo `date +"%Y-%m-%d %H:%M:%S"`" $DBASE created" >>$LOG
 }
 
 # Creates the item table indices.
@@ -229,7 +232,7 @@ END_SQL
     else
         echo echo `date +"%Y-%m-%d %H:%M:%S"`" **error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >>$LOG
         echo "**error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >&2
-        exit 1
+        exit $FALSE
     fi
 }
 
@@ -254,7 +257,7 @@ END_SQL
     else
         echo `date +"%Y-%m-%d %H:%M:%S"`" **error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >>$LOG
         echo "**error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >&2
-        exit 1
+        exit $FALSE
     fi
 }
 
@@ -270,16 +273,21 @@ load_inactive_holds()
             local insert_date=$(echo $log_list | /home/its/bin/pipe.pl -W'/' -olast | /home/its/bin/pipe.pl -Sc0:19-27) 
             ## Add the primary key for the database which is the last 2 fields; the insert date, and 
             ## an auto-increment field.
-            cat $log_list | /home/its/bin/pipe.pl -mc9:####################\|${insert_date}_ -2c10:1 >$log_list.converted
-            cat $log_list.converted | /home/its/bin/pipe.pl -ocontinue -m"c0:INSERT OR IGNORE INTO inactive\_holds (PickupLibrary\,InactiveReason\,DateInactive\,DateHoldPlaced\,HoldType\,Override\,NumberOfPickupNotices\,DateNotified\,DateAvailable\,ItemType\,DateInserted\,Id) VALUES (\"######\",c1:\"####################\",c2:#,c3:#,c4:\"##\",c5:\"##\",c6:#,c7:#,c8:#,c9:\"####################\",c10:#,c11:#);" -h, -C"num_cols:width12-12" -TCHUNKED:"BEGIN=BEGIN TRANSACTION;,SKIP=10000.END TRANSACTION;BEGIN TRANSACTION;,END=END TRANSACTION;" >$log_list.sql
+            cat $log_list | /home/its/bin/pipe.pl -mc9:"####################\|${insert_date}_" -2"c11:1,100000000" >$log_list.converted
+            cat $log_list.converted | /home/its/bin/pipe.pl -ocontinue -m"c0:INSERT OR IGNORE INTO inactive\_holds (PickupLibrary\,InactiveReason\,DateInactive\,DateHoldPlaced\,HoldType\,Override\,NumberOfPickupNotices\,DateNotified\,DateAvailable\,ItemType\,DateInserted\,Id) VALUES (\"######\",c1:\"####################\",c2:#,c3:#,c4:\"##\",c5:\"##\",c6:#,c7:#,c8:#,c9:\"####################\",c10:#,c11:##########);" -h, -C"num_cols:width12-12" -TCHUNKED:"BEGIN=BEGIN TRANSACTION;,SKIP=10000.END TRANSACTION;BEGIN TRANSACTION;,END=END TRANSACTION;" >$log_list.sql
             if [ -f "$log_list.sql" ]; then
                 echo `date +"%Y-%m-%d %H:%M:%S"`" loading $log_list.sql..." >>$LOG
                 echo "loading $log_list.sql..." >&2
-                cat $log_list.sql | sqlite3 $DBASE
-                # rm $log_list.sql
-                # rm $log_list.converted
-                echo `date +"%Y-%m-%d %H:%M:%S"`" loaded successfully." >>$LOG
-                echo "loaded successfully." >&2
+                if sqlite3 $DBASE < $log_list.sql; then
+                    rm $log_list.sql
+                    rm $log_list.converted
+                    echo `date +"%Y-%m-%d %H:%M:%S"`" loaded successfully." >>$LOG
+                    echo "loaded successfully." >&2
+                else
+                    echo `date +"%Y-%m-%d %H:%M:%S"`" failed to load file $log_list.sql. Fix and reload which is safe since entries are loaded with INSERT OR IGNORE." >>$LOG
+                    echo " failed to load file $log_list.sql. Fix and reload which is safe since entries are loaded with INSERT OR IGNORE." >&2
+                    ((failed_load_count+=1))
+                fi
             else
                 ((failed_load_count+=1))
                 echo `date +"%Y-%m-%d %H:%M:%S"`" * warn: no records to load. $log_list.sql contains no statements." >>$LOG
@@ -289,7 +297,7 @@ load_inactive_holds()
     else
         echo `date +"%Y-%m-%d %H:%M:%S"`" **error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >>$LOG
         echo "**error: $DBASE doesn't exist or is empty. Use -C to create it then -l to load data from backup." >&2
-        exit 1
+        exit $FALSE
     fi
     echo $failed_load_count
 }
@@ -310,24 +318,23 @@ cleanup()
             echo `date +"%Y-%m-%d %H:%M:%S"`" '$HOLD_ACTIVITY' files successfully backed up." >>$LOG
             echo "'$HOLD_ACTIVITY' files successfully backed up." >&2
             rm $HOLD_ACTIVITY*
-            ## Uncomment below after testing.
             if ! ssh -C $SERVER "rm $INACTIVE_HOLDS_DIR/$HOLD_ACTIVITY*"; then
                 echo `date +"%Y-%m-%d %H:%M:%S"`" *warning: failed to clean up '$HOLD_ACTIVITY' files from $SERVER $INACTIVE_HOLDS_DIR. Do it manually to avoid duplicate inserts of data." >>$LOG
                 echo "*warn: failed to clean up '$HOLD_ACTIVITY' files from ILS." >&2
                 echo "*warn: Do it manually to avoid duplicate inserts of data." >&2
-                echo `date +"%Y-%m-%d %H:%M:%S"`" *warning: failed to clean up '$HOLD_ACTIVITY' files from $SERVER $INACTIVE_HOLDS_DIR. Do it manually to avoid duplicate inserts of data." | mailx -s"*warning removing inactive holds lists, chance of reloading next time!" -a"From:its@epl-el1.epl.ca"  "$EMAILS"
-                exit 1
+                echo `date +"%Y-%m-%d %H:%M:%S"`" *warning: failed to clean up '$HOLD_ACTIVITY' files from $SERVER $INACTIVE_HOLDS_DIR. Do it manually to avoid duplicate inserts of data." | mailx -s"*warning succeeded in loading inactive holds, but failed to remove lists from ILS!" -a"From:its@epl-el1.epl.ca"  "$EMAILS"
+                exit $FALSE
             fi
         else
             echo `date +"%Y-%m-%d %H:%M:%S"`" ***error failed to backup '$HOLD_ACTIVITY' files. Not cleaning the ILS either." >>$LOG
             echo "failed to backup '$HOLD_ACTIVITY' files. Not cleaning the ILS either." >&2
             echo `date +"%Y-%m-%d %H:%M:%S"`" ***error failed to backup '$HOLD_ACTIVITY' files. Not cleaning the ILS either." | mailx -s"*warning removing inactive holds lists, chance of reloading next time!" -a"From:its@epl-el1.epl.ca"  "$EMAILS"
-            exit 1
+            exit $FALSE
         fi
     else
         echo `date +"%Y-%m-%d %H:%M:%S"`" $WORKING_DIR/Data is required but not created, exiting because nothing to clean up." >>$LOG
         echo "$WORKING_DIR/Data is required but not created, exiting because nothing to clean up." >&2
-        exit 1 
+        exit $FALSE 
     fi
 }
 
@@ -339,7 +346,7 @@ fetch_files()
         scp $SERVER:$INACTIVE_HOLDS_DIR/*.lst $WORKING_DIR/Data
     else
         ANSWER=$(confirm "create directory $WORKING_DIR/Data ")
-        if [ "$ANSWER" == "0" ]; then
+        if [ "$ANSWER" == "$TRUE" ]; then
             echo `date +"%Y-%m-%d %H:%M:%S"`" creating $WORKING_DIR/Data" >>$LOG
             echo "creating $WORKING_DIR/Data" >&2
             mkdir -p $WORKING_DIR/Data
@@ -347,7 +354,7 @@ fetch_files()
         else
             echo `date +"%Y-%m-%d %H:%M:%S"`" $WORKING_DIR/Data is required but not created, exiting." >>$LOG
             echo "$WORKING_DIR/Data is required but not created, exiting." >&2
-            exit 1
+            exit $FALSE
         fi
     fi
 }
@@ -379,17 +386,20 @@ while getopts ":cCdfilLx" opt; do
         echo "-l triggered to run data load" >&2
         drop_indices
         # Use a special clean up that doesn't wipe files from the ILS. We may be just restoring from backup.
-        if load_inactive_holds; then
+        success=load_inactive_holds
+        if $success; then
             CURR_DIR=$(pwd)
             echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds loaded successfully." | mailx -s"Inactive holds status: success" -a"From:its@epl-el1.epl.ca"  "$EMAILS"
             cd $WORKING_DIR/Data
             tar uvf $BACKUP_DATA $HOLD_ACTIVITY*
             echo `date +"%Y-%m-%d %H:%M:%S"`" '$HOLD_ACTIVITY' files successfully backed up." >>$LOG
             echo "'$HOLD_ACTIVITY' files successfully backed up." >&2
+            #### Warning: don't use the cleanup() function because it zero's out files on the ILS
+            #### Warning: and this is for loading or re-loading local, and backup $HOLD_ACTIVITY* files.
             rm $HOLD_ACTIVITY*
             cd $CURR_DIR  # Go back to where you were before we 'cd'd into the Data directory.
         else
-            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds load failed. Check log in its@EPL-EL1:~/InactiveHolds for details. Fix before it re-runs to avoid duplicate data loads." | mailx -s"Inactive holds status: fail" -a"From:its@epl-el1.epl.ca" "$EMAILS"
+            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds load failed. $success files failed to load. Check log in its@EPL-EL1:~/InactiveHolds for details. Files can be reloaded since inserts are made with INSERT OR IGNORE." | mailx -s"Inactive holds status: fail" -a"From:its@epl-el1.epl.ca" "$EMAILS"
         fi
         ensure_indices
 		;;
@@ -397,18 +407,22 @@ while getopts ":cCdfilLx" opt; do
         echo "-L triggered to run" >&2
         fetch_files
         drop_indices
-        if load_inactive_holds; then
+        success=load_inactive_holds
+        if $success; then
             echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds loaded successfully." | mailx -s"Inactive holds status: success" -a"From:its@epl-el1.epl.ca" "$EMAILS"
             cleanup
         else
-            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds load failed. Check log in $SERVER $WORKING_DIR for details. Fix before it re-runs to avoid duplicate data loads. Restore from backup in $WORKING_DIR/Data if necessary." | mailx -s"Inactive holds status: fail" -a"From:its@epl-el1.epl.ca"  "$EMAILS"
+            echo `date +"%Y-%m-%d %H:%M:%S"`" Inactive holds load failed. $success files failed to load. Check log in its@EPL-EL1:~/InactiveHolds for details. Files can be reloaded since inserts are made with INSERT OR IGNORE." | mailx -s"Inactive holds status: fail" -a"From:its@epl-el1.epl.ca"  "$EMAILS"
         fi
         ensure_indices
 		;;
 	x)	usage
 		;;
+    *)	usage
+        echo "**error invalid option specified." >&2
+		;;
   esac
 done
-exit 0
+exit $TRUE
 
 # EOF
