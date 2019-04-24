@@ -27,17 +27,21 @@
 SERVER=sirsi\@eplapp.library.ualberta.ca
 INACTIVE_HOLDS_DIR=/s/sirsi/Unicorn/EPLwork/cronjobscripts/Inactive_holds
 WORKING_DIR=/home/its/InactiveHolds
-VERSION="2.1"  # Dev.
-#### Test version.
+VERSION="3.1.1"  # Remove exit status variable.
 DATABASE=inactive_holds.db
+LOG=$WORKING_DIR/inactive_holds.log
+#### Test version.
+# DATABASE=inactive_holds.test.db
+# LOG=$WORKING_DIR/inactive_holds.test.log
+#### Test version.
 BACKUP_DATA=inactive_holds.tar
 INACTIVE_HOLDS_TABLE_NAME=inactive_holds
 HOLD_ACTIVITY=Holds_activity_for_
 DBASE=$WORKING_DIR/$DATABASE
-LOG=$WORKING_DIR/inactive_holds.log
 EMAILS=andrew.nisbet\@epl.ca
 TRUE=0
 FALSE=1
+MILESTONE=''
 # Displays the usage for this product.
 # param:  none
 # return: none
@@ -68,6 +72,7 @@ Flags:
       If the clean up activity is successful, indices are added back to the 
       table(s) in $DATABASE.
       Equivalent to -f, -l, -c, in that order.
+  -p{YYYYMMDD}: Purge data from before this milestone date. Delete <= date inserted.
 
 Schema:
 ------- 
@@ -360,7 +365,7 @@ fetch_files()
 }
 
 # Argument processing.
-while getopts ":cCdfilLx" opt; do
+while getopts ":cCdfilLp:x" opt; do
   case $opt in
 	c)	echo `date +"%Y-%m-%d %H:%M:%S"`" -c triggered to clean up the files on the ILS ($SERVER)." >>$LOG
         echo "-c triggered to clean up the files on the ILS ($SERVER)." >&2
@@ -416,6 +421,48 @@ while getopts ":cCdfilLx" opt; do
         fi
         ensure_indices
 		;;
+    p)  echo `date +"%Y-%m-%d %H:%M:%S"`" -p triggered to purge data from before $OPTARG." >>$LOG
+        echo "-p triggered to purge data from before $OPTARG" >&2
+        # This line will produce no output if the input string is not 8 digits.
+        MILESTONE=$(echo $OPTARG | /home/its/bin/pipe.pl -ec0:normal_D | /home/its/bin/pipe.pl -Cc0:width8-8)
+        if [[ -z "$MILESTONE" ]]; then
+            echo "**error in date. Expected a string of all digits in the form of 'YYYYMMDD'." >>$LOG
+            echo "**error in date. Expected a string of all digits in the form of 'YYYYMMDD'." >&2
+            exit $FALSE
+        fi
+        # Warn of the impending purge.
+        ANSWER=$(confirm "Remove data from before $MILESTONE ")
+        if [ "$ANSWER" == "$TRUE" ]; then
+            echo `date +"%Y-%m-%d %H:%M:%S"`" backing up data that will be removed." >>$LOG
+            echo "backing up data that will be removed." >&2
+            # Make a list for backup.
+            echo "SELECT * FROM $INACTIVE_HOLDS_TABLE_NAME WHERE DateInserted <= '$MILESTONE';" | sqlite3 $DBASE >$WORKING_DIR/remove_$MILESTONE.bak
+            if [ -s $WORKING_DIR/remove_$MILESTONE.bak ]; then
+                RECORDS=$(cat $WORKING_DIR/remove_$MILESTONE.bak | wc -l)
+                echo "DELETE FROM $INACTIVE_HOLDS_TABLE_NAME WHERE DateInserted <= '$MILESTONE';" >$WORKING_DIR/delete.sql
+                echo `date +"%Y-%m-%d %H:%M:%S"`" purging data from $DBASE" >>$LOG
+                echo "purging data from $DBASE" >&2
+                # run the delete and capture the exit status from sqlite3 (not exit status from 'cat').
+                if sqlite3 $DBASE < $WORKING_DIR/delete.sql; then
+                    echo `date +"%Y-%m-%d %H:%M:%S"`" purged $RECORDS records from $DBASE. See $WORKING_DIR/remove_$MILESTONE.bak for backup records." >>$LOG
+                    echo " purged $RECORDS records from $DBASE. See $WORKING_DIR/remove_$MILESTONE.bak for backup records." >&2
+                    echo `date +"%Y-%m-%d %H:%M:%S"`" rebuilding indexes." >>$LOG
+                    echo "rebuilding indexes." >&2
+                    drop_indices
+                    ensure_indices
+                else
+                    echo `date +"%Y-%m-%d %H:%M:%S"`"**error, failed to purged $RECORDS records from $DBASE. See $WORKING_DIR/delete.sql for information." >>$LOG
+                    echo "**error, failed to purged $RECORDS records from $DBASE. See $WORKING_DIR/delete.sql for more information." >&2
+                    exit $FALSE
+                fi
+            fi
+            exit $TRUE
+        else
+            echo `date +"%Y-%m-%d %H:%M:%S"`" aborting purge and exiting." >>$LOG
+            echo "aborting purge and exiting." >&2
+            exit $TRUE
+        fi
+        ;;
 	x)	usage
 		;;
     *)	usage
