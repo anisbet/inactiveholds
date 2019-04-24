@@ -27,7 +27,7 @@
 SERVER=sirsi\@eplapp.library.ualberta.ca
 INACTIVE_HOLDS_DIR=/s/sirsi/Unicorn/EPLwork/cronjobscripts/Inactive_holds
 WORKING_DIR=/home/its/InactiveHolds
-VERSION="3.1.1"  # Remove exit status variable.
+VERSION="3.1.2"  # Remove exit status variable.
 DATABASE=inactive_holds.db
 LOG=$WORKING_DIR/inactive_holds.log
 #### Test version.
@@ -455,6 +455,9 @@ while getopts ":cCdfilLp:x" opt; do
                     echo "**error, failed to purged $RECORDS records from $DBASE. See $WORKING_DIR/delete.sql for more information." >&2
                     exit $FALSE
                 fi
+            else
+                echo `date +"%Y-%m-%d %H:%M:%S"`" no records selected to purge." >>$LOG
+                echo "no records selected to purge." >&2
             fi
             exit $TRUE
         else
